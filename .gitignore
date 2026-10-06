@@ -1,0 +1,7 @@
+.venv/
+__pycache__/
+uploads/
+*.db
+PLAN.md
+Build_guide.md
+
