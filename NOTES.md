@@ -131,6 +131,46 @@ confirms the documented distortion stays inside tolerance.
   - **JSON Property Sanitization:** Recursively sanitizes row attributes to guarantee clean `json.dumps()` serialization: converts `datetime.date`/`datetime.datetime`/`pd.Timestamp` to ISO strings, floats/np.float NaN and INF to `None` (JSON `null`), and numpy numeric primitives to Python `int`/`float`.
   - **Empty Feature Guard:** Explicitly raises `InvalidFileContent` if the file has 0 placemarks or features.
 
+## Step 5 — Database, Schemas, Processing Pipeline, and API Endpoints
+
+### Database & Models (`app/db.py`, `app/models.py`)
+- Configured SQLAlchemy 2.0 with `DeclarativeBase` and `sqlite:///./app.db` with `connect_args={"check_same_thread": False}`.
+- `UploadedFile`: tracks file metadata (`id`, `filename`, `kind`, `status`, `feature_count`, `crs`, `error`, `created_at`).
+  - Possible `status` values: `PROCESSING` during execution, `COMPLETED` on successful ingestion and measurement, or `FAILED` if an unexpected error occurs.
+- `FeatureRecord`: stores individual feature measurements (`id`, `file_id` indexed FK, `index`, `geometry_type`, `geometry_geojson`, `properties`, `supported`, `area_sq_m`, `length_m`, `measurement_crs`, `note`).
+- Python 3.9 compatibility maintained using `Optional[...]` instead of union types (`| None`).
+
+### Pydantic Schemas (`app/schemas.py`)
+- Pydantic v2 schemas:
+  - `FileOut`: Summary of uploaded file.
+  - `FeatureOut`: Details for each feature including automatically computed `area_hectares` (`area_sq_m / 10000`) and `length_km` (`length_m / 1000`).
+  - `MeasurementsOut`: Full measurement payload containing file ID, CRS, feature count, and ordered feature list.
+
+### Processing Pipeline (`app/services/processing.py`)
+- `process_file(db, record, path, kind)`:
+  - For shapefile archives, extracts into a temporary directory using `safe_extract_zip`, then reads via `read_features(..., kind="shapefile")`.
+  - For KML, directly reads all placemark layers.
+  - Iterates over each feature in its own isolated `try...except` block: if a single feature has an issue, it is flagged as `supported=False` with a descriptive note rather than failing the entire file batch.
+  - Converts feature geometries to WGS-84 before invoking `measure_geometry` (UTM reprojection and meter/m² calculation).
+  - Preserves the original unprojected geometry as GeoJSON text in `geometry_geojson`.
+  - Atomically commits all `FeatureRecord` rows and updates the parent file record to `COMPLETED`.
+
+### API Endpoints (`app/api/files.py`, `app/main.py`)
+- `POST /api/files/`:
+  - Pre-validates file extension with `detect_kind` before saving (returns HTTP 415 if unsupported).
+  - Streams upload to disk using a unique UUID folder (`uploads/<uuid>/upload.kml` or `upload.zip`) to prevent path traversal and name collisions.
+  - Rejects oversized uploads exceeding `MAX_UPLOAD_MB` with HTTP 413 and deletes partial files.
+  - Inserts initial `PROCESSING` record in the database.
+  - Executes `process_file`: client data errors (`InvalidFileContent`, `MissingCRS`) remove the record/folder and return HTTP 422; unexpected exceptions mark the record `FAILED` and return HTTP 500 with the file ID.
+  - Returns HTTP 201 with `FileOut`.
+- `GET /api/files/{id}/`:
+  - Returns file metadata and current status; returns HTTP 404 if not found.
+- `GET /api/files/{id}/measurements/`:
+  - Returns all feature measurements ordered by index.
+  - Supports `?include_geometry=false` to omit GeoJSON geometry payloads for low-bandwidth consumers.
+  - Returns HTTP 404 if not found.
+- FastAPI lifespan automatically creates database tables upon startup (`Base.metadata.create_all`).
+
 ---
 
-<!-- Steps 5–7 notes will be added here as they are completed. -->
+<!-- Steps 6–7 notes will be added here as they are completed. -->

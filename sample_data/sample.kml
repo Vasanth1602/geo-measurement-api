@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+  <Document>
+    <name>Chennai Landmarks Survey</name>
+    <Folder>
+      <name>Chennai Central Features</name>
+      <Placemark>
+        <name>Ripon Building Ground</name>
+        <description>Colonial building headquarters of Greater Chennai Corporation</description>
+        <Polygon>
+          <outerBoundaryIs>
+            <LinearRing>
+              <coordinates>
+                80.2720,13.0820,0
+                80.2750,13.0820,0
+                80.2750,13.0850,0
+                80.2720,13.0850,0
+                80.2720,13.0820,0
+              </coordinates>
+            </LinearRing>
+          </outerBoundaryIs>
+        </Polygon>
+      </Placemark>
+      <Placemark>
+        <name>Poonamallee High Road Segment</name>
+        <description>Arterial road connecting central Chennai westwards</description>
+        <LineString>
+          <coordinates>
+            80.2680,13.0810,0
+            80.2720,13.0825,0
+            80.2760,13.0835,0
+            80.2800,13.0845,0
+          </coordinates>
+        </LineString>
+      </Placemark>
+      <Placemark>
+        <name>Chennai Central Railway Station Landmark</name>
+        <description>Major railway terminus in South India</description>
+        <Point>
+          <coordinates>80.2755,13.0827,0</coordinates>
+        </Point>
+      </Placemark>
+    </Folder>
+  </Document>
+</kml>
