@@ -43,6 +43,17 @@ python -m uvicorn app.main:app --reload
 
 The API listens at `http://127.0.0.1:8000`. Open `http://127.0.0.1:8000/docs` for interactive API documentation. On startup, the application creates its SQLite tables in `app.db` in the current working directory. Uploaded files are kept under `uploads/`.
 
+### Optional: run with Docker
+
+Build and start the API in one container:
+
+```bash
+docker build -t geo-measurement-api .
+docker run --name geo-measurement-api -p 8000:8000 geo-measurement-api
+```
+
+Open `http://localhost:8000/docs` to use the API. Stop the container with `Ctrl+C`; restart the stopped container with `docker start -ai geo-measurement-api`. This is a minimal single-container setup for local use, not a production deployment. It does not configure persistent volumes or production hardening. The SQLite database and uploaded files remain when the container is stopped, but are lost if the container is removed. Add persistent volumes before using Docker for data you need to keep.
+
 ## API
 
 Uploads use `multipart/form-data` with a field named `file`.
@@ -82,22 +93,22 @@ Example response (the generated ID and values depend on the uploaded file):
 `GET /api/files/{id}/`
 
 ```bash
-curl http://127.0.0.1:8000/api/files/<id>/
+curl http://127.0.0.1:8000/api/files/YOUR_FILE_ID/
 ```
 
-Returns the same file summary fields as the upload response.
+Replace `YOUR_FILE_ID` with the `id` returned by the upload endpoint. This returns the same file summary fields as the upload response.
 
 ### Get per-feature measurements
 
 `GET /api/files/{id}/measurements/`
 
 ```bash
-curl http://127.0.0.1:8000/api/files/<id>/measurements/
+curl http://127.0.0.1:8000/api/files/YOUR_FILE_ID/measurements/
 ```
 
 The response contains a feature list. Each feature includes its zero-based `index`, `geometry_type`, source `crs`, `properties`, GeoJSON `geometry`, `supported` flag, measurement values, `measurement_crs`, and an optional explanatory `note`. Geometry is included by default. To reduce response size, request `?include_geometry=false`; the `geometry` field is then `null`.
 
-Example excerpt for a polygon (measurement numbers are illustrative; actual results are calculated from the uploaded geometry):
+Example response from uploading `sample_data/sample.kml` and requesting its measurements (the file ID is generated for each upload):
 
 ```json
 {
@@ -109,21 +120,52 @@ Example excerpt for a polygon (measurement numbers are illustrative; actual resu
       "index": 0,
       "geometry_type": "Polygon",
       "crs": "EPSG:4326",
-      "properties": {"Name": "Ripon Building Ground"},
-      "geometry": null,
+      "properties": {
+        "Name": "Ripon Building Ground",
+        "description": "Colonial building headquarters of Greater Chennai Corporation"
+      },
+      "geometry": {"type": "Polygon", "coordinates": [[[80.272, 13.082], [80.275, 13.082], [80.275, 13.085], [80.272, 13.085], [80.272, 13.082]]]},
       "supported": true,
-      "area_sq_m": 107900.0,
-      "area_hectares": 10.79,
+      "area_sq_m": 107910.15926651264,
+      "area_hectares": 10.791,
       "length_m": null,
       "length_km": null,
       "measurement_crs": "EPSG:32644",
       "note": null
+    },
+    {
+      "index": 1,
+      "geometry_type": "LineString",
+      "crs": "EPSG:4326",
+      "properties": {"Name": "Poonamallee High Road Segment", "description": "Arterial road connecting central Chennai westwards"},
+      "geometry": {"type": "LineString", "coordinates": [[80.268, 13.081], [80.272, 13.0825], [80.276, 13.0835], [80.28, 13.0845]]},
+      "supported": true,
+      "area_sq_m": null,
+      "area_hectares": null,
+      "length_m": 1359.3716083399954,
+      "length_km": 1.3594,
+      "measurement_crs": "EPSG:32644",
+      "note": null
+    },
+    {
+      "index": 2,
+      "geometry_type": "Point",
+      "crs": "EPSG:4326",
+      "properties": {"Name": "Chennai Central Railway Station Landmark", "description": "Major railway terminus in South India"},
+      "geometry": {"type": "Point", "coordinates": [80.2755, 13.0827]},
+      "supported": true,
+      "area_sq_m": null,
+      "area_hectares": null,
+      "length_m": null,
+      "length_km": null,
+      "measurement_crs": null,
+      "note": "no measurement for points"
     }
   ]
 }
 ```
 
-The example uses `geometry: null` to illustrate the `include_geometry=false` response. The API also has `GET /health`, which returns `{"status":"ok"}`.
+The example uses the default `include_geometry=true` behavior. With `?include_geometry=false`, each feature's `geometry` is `null`. The API also has `GET /health`, which returns `{"status":"ok"}`.
 
 ### Status codes
 
@@ -202,13 +244,7 @@ KML coordinates are treated as EPSG:4326. Shapefile coordinates use the CRS read
 
 UTM is selected from each feature's centroid, so a feature that crosses a zone boundary is measured wholly in one zone. The supported UTM latitude range is 80°S to 84°N.
 
-**Empirical accuracy vs. geodesic (`pyproj.Geod` WGS-84):**
-- **Chennai polygon (Zone 44N):** UTM area error is `-0.07%` compared to the WGS-84 ellipsoid.
-- **Sydney polygon (Zone 56S):** UTM area error is `-0.02%`.
-- **Zone-boundary polygon (straddling lon 84°):** UTM area error is `+0.18%`.
-- **Tolerance:** Every feature measurement is asserted to match geodesic math within `0.5%` relative tolerance in the test suite.
-- **The "Degrees Trap":** A $0.01^\circ \times 0.01^\circ$ square near the equator has a raw planar area of `0.0001` (square degrees — physically meaningless), whereas its actual physical area is $\approx 1,198,994\text{ m}^2$ ($\approx 120\text{ ha}$).
-- **Performance:** Feature measurement benchmarks at $\approx 0.36\text{ ms}$ per feature ($\approx 36\text{ seconds}$ per 100,000 features).
+The measurement tests compare selected polygon areas and line lengths against `pyproj.Geod` on WGS-84 using a `0.5%` relative tolerance. A test polygon that crosses a UTM zone boundary is also checked against this tolerance; these tests validate representative geometries, not a universal error bound for every possible feature. The degrees-trap test uses a $0.01^\circ \times 0.01^\circ$ square near Chennai: its planar Shapely area is `0.0001` square degrees, while the projected measurement is between `1.1` and `1.3` million square meters.
 
 ## Design decisions
 
@@ -230,7 +266,9 @@ Run the test suite from the repository root:
 python -m pytest -v
 ```
 
-The test suite runs 62 automated tests in under 3 seconds covering:
+**Verified locally:** Python 3.12.9 and pytest 9.1.1 — **62 passed in 3.78 seconds**. The run also emitted 18 deprecation warnings: one from Starlette's TestClient/httpx integration, 11 from `datetime.utcnow()`, five from the deprecated HTTP 422 constant, and one from the deprecated HTTP 413 constant.
+
+The suite covers:
 - UTM zone calculation, polar bounds (-80..84), and longitude validation (-180..180).
 - Geodesic accuracy cross-checks against `pyproj.Geod` within 0.5%.
 - Zip-slip path traversal and zip bomb byte limit enforcement.
@@ -243,15 +281,15 @@ The test suite runs 62 automated tests in under 3 seconds covering:
 - SQLite is used; there is no authentication, pagination, or file deletion endpoint.
 - ZIP uploads must contain exactly one Shapefile.
 - Invalid geometries are flagged rather than repaired.
-- A feature crossing UTM zones is measured in the single zone selected from its centroid (maximum scale distortion measured at `+0.18%`).
+- A feature crossing UTM zones is measured in the single zone selected from its centroid. A documented zone-boundary test case had an area difference of about `+0.18%` compared with its geodesic result; this is one example, not a maximum-error guarantee.
 - Features outside UTM's supported latitude range (-80° to 84°), or with invalid longitude values, are flagged as unsupported.
 
 ## Learning
 
-1. **The KML Multi-Layer Trap:** A standard `geopandas.read_file(path)` only parses the *first* `<Folder>` in a multi-folder KML, silently discarding subsequent layers. We resolved this by querying `pyogrio.list_layers(path)` and iteratively reading and concatenating all layers with continuous indices.
-2. **Axis-Order Pitfall:** Depending on the authority (EPSG vs OGC), coordinate order can flip between `(lat, lon)` and `(lon, lat)`. Passing `always_xy=True` to `pyproj.Transformer` guarantees consistent `(x=lon, y=lat)` inputs.
-3. **Attribute Serialization in Spatial Files:** Geospatial attribute tables commonly contain `numpy` primitives, `datetime.date`, and `NaN`/`NaT` values that break standard `json.dumps()`. A dedicated sanitization pass converts dates to ISO strings, numbers to Python types, and `NaN` to JSON `null`.
-4. **Actionable Geometry Validation:** Rather than returning a generic `"invalid geometry"` message, incorporating `shapely.validation.explain_validity(geom)` yields human-readable diagnostics such as `"Self-intersection [80.25 13.06]"` that users can act on.
+1. **KML layers:** KML folders can appear as separate layers. The reader uses `pyogrio.list_layers(path)` and reads each layer so later folders are not silently left out.
+2. **Coordinate order:** `always_xy=True` keeps transformations consistent with longitude as x and latitude as y.
+3. **Attribute cleanup:** Spatial file properties may include dates, NumPy values, and missing values. These need conversion before they can be returned safely as JSON.
+4. **Geometry diagnostics:** `shapely.validation.explain_validity(geom)` provides a reason for invalid geometries, rather than only saying that a geometry is invalid.
 
 ## Future scope
 
@@ -263,4 +301,4 @@ The test suite runs 62 automated tests in under 3 seconds covering:
 
 ---
 
-*Built with AI assistance (Antigravity agent). All architecture decisions, geospatial math, and test assertions were reviewed and validated against geodesic ground truth.*
+*Built with AI assistance (Antigravity agent).*
