@@ -182,23 +182,31 @@ The example uses the default `include_geometry=true` behavior. With `?include_ge
 ## Architecture
 
 ```text
-app/
-  main.py                 FastAPI application, lifespan, and health endpoint
-  config.py               Upload directory and size limits
-  db.py                   SQLite engine, SQLAlchemy base, and DB dependency
-  models.py               UploadedFile and FeatureRecord database tables
-  schemas.py              Pydantic response models and derived units
-  api/files.py            Upload, file information, and measurements endpoints
-  services/
-    errors.py             File-processing exception types
-    ingest.py             Upload streaming and safe ZIP extraction
-    reader.py             KML/Shapefile reading and property cleanup
-    crs.py                CRS transformations and UTM selection
-    measure.py             Geometry validation and measurement
-    processing.py         Per-file orchestration and database persistence
-tests/                    Unit and API tests
-scripts/                  Sample data generation and reader spike
-sample_data/              Example KML and Shapefile ZIP files
+.
+├── app/
+│   ├── __init__.py
+│   ├── main.py                 FastAPI app, lifespan, and health endpoint
+│   ├── config.py               Upload directory and size limits
+│   ├── db.py                   SQLite engine, SQLAlchemy base, and DB dependency
+│   ├── models.py               UploadedFile and FeatureRecord database tables
+│   ├── schemas.py              Pydantic response models and derived units
+│   ├── api/
+│   │   ├── __init__.py
+│   │   └── files.py             Upload, file information, and measurements endpoints
+│   └── services/
+│       ├── __init__.py
+│       ├── errors.py            File-processing exception types
+│       ├── ingest.py            Upload streaming and safe ZIP extraction
+│       ├── reader.py            KML/Shapefile reading and property cleanup
+│       ├── crs.py               CRS transformations and UTM selection
+│       ├── measure.py           Geometry validation and measurement
+│       └── processing.py        Per-file orchestration and database persistence
+├── tests/                      Unit and API tests
+├── scripts/                    Sample data generation and reader spike
+├── sample_data/                Example KML and Shapefile ZIP files
+├── Dockerfile                  Optional single-container setup
+├── .dockerignore               Files excluded from Docker build context
+└── requirements.txt            Python dependencies
 ```
 
 ```mermaid
