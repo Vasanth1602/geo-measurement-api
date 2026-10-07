@@ -19,6 +19,17 @@ A FastAPI service that accepts KML files and ZIP archives containing a Shapefile
 
 ## Setup
 
+### Clone the repository
+
+Run these commands from the directory where you want the project folder created:
+
+```bash
+git clone https://github.com/Vasanth1602/geo-measurement-api.git
+cd geo-measurement-api
+```
+
+Then follow the setup instructions for your operating system below.
+
 ### Windows PowerShell
 
 ```powershell
