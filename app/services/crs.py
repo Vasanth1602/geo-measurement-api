@@ -3,17 +3,27 @@ CRS utilities: UTM zone selection and reprojection.
 All measurement happens in projected (meter-based) coordinates, never in degrees.
 """
 import shapely.ops
-from pyproj import Transformer
+from pyproj import CRS, Transformer
 from shapely.geometry.base import BaseGeometry
 
 
 def utm_epsg_for(lon: float, lat: float) -> int:
     """Return the EPSG code of the UTM zone that contains (lon, lat).
 
-    Raises ValueError for polar latitudes (|lat| > 84) where UTM is undefined.
+    Raises ValueError for:
+    - polar latitudes (lat > 84 or lat < -80) where UTM is undefined.
+    - longitudes outside -180..180 which are not valid WGS-84 coordinates.
     """
-    if abs(lat) > 84:
-        raise ValueError(f"UTM is undefined for polar latitudes (lat={lat})")
+    if lon < -180 or lon > 180:
+        raise ValueError(
+            f"longitude {lon} is outside -180..180; not a valid WGS-84 coordinate"
+        )
+
+    if lat > 84 or lat < -80:
+        raise ValueError(
+            f"UTM is undefined for polar latitudes (lat={lat}); "
+            "valid range is -80..84"
+        )
 
     zone = int((lon + 180) // 6) + 1
     zone = max(1, min(60, zone))  # clamp: lon=180 would give 61 without this
@@ -27,8 +37,6 @@ def to_wgs84(geom: BaseGeometry, source_crs) -> BaseGeometry:
     If the geometry is already in EPSG:4326 we return it unchanged to avoid
     floating-point drift from a no-op transform.
     """
-    from pyproj import CRS
-
     src = CRS.from_user_input(source_crs)
     if src.equals(CRS.from_epsg(4326)):
         return geom

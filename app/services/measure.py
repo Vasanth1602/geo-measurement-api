@@ -7,7 +7,7 @@ All exceptions are caught so one bad feature never crashes a request.
 from dataclasses import dataclass
 from typing import Optional
 
-from shapely.geometry.base import BaseGeometry
+from shapely.validation import explain_validity
 
 from app.services import crs as crs_svc
 
@@ -40,7 +40,9 @@ def measure_geometry(geom_wgs84) -> MeasurementResult:
             return MeasurementResult(
                 supported=False,
                 area_sq_m=None, length_m=None,
-                measurement_crs=None, note="invalid geometry",
+                measurement_crs=None,
+                # explain_validity gives a human-readable reason (e.g. "Self-intersection")
+                note=f"invalid geometry: {explain_validity(geom_wgs84)}",
             )
 
         gtype = geom_wgs84.geom_type
@@ -84,7 +86,7 @@ def measure_geometry(geom_wgs84) -> MeasurementResult:
         )
 
     except ValueError as exc:
-        # to_utm raises ValueError for polar coordinates
+        # to_utm raises ValueError for polar coordinates or invalid longitude
         return MeasurementResult(
             supported=False,
             area_sq_m=None, length_m=None,

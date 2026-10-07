@@ -10,7 +10,6 @@ from pyproj import Geod
 from shapely.geometry import (
     GeometryCollection,
     LineString,
-    MultiLineString,
     MultiPolygon,
     Point,
     Polygon,
@@ -134,7 +133,8 @@ def test_invalid_bowtie_polygon_unsupported():
     assert not bowtie.is_valid  # sanity-check the fixture itself
     result = measure_geometry(bowtie)
     assert result.supported is False
-    assert result.note == "invalid geometry"
+    # note now includes shapely's explain_validity detail after the prefix
+    assert result.note.startswith("invalid geometry")
 
 
 def test_geometry_collection_unsupported():
@@ -168,3 +168,50 @@ def test_measurement_crs_line():
     line = LineString([(80.27, 13.08), (80.37, 13.18)])
     result = measure_geometry(line)
     assert result.measurement_crs == "EPSG:32644"
+
+
+# ---------------------------------------------------------------------------
+# Degrees trap: proves why we never measure in EPSG:4326
+# ---------------------------------------------------------------------------
+
+def test_degrees_trap():
+    # A 0.01° x 0.01° square near Chennai.
+    # Its raw shapely .area in degree² is 0.0001 — meaningless.
+    # After UTM projection, measure_geometry must return roughly 1.2 million m².
+    tiny = Polygon([
+        (80.27, 13.08), (80.28, 13.08),
+        (80.28, 13.09), (80.27, 13.09),
+        (80.27, 13.08),
+    ])
+    # Confirm the raw degree area is tiny
+    assert tiny.area == pytest.approx(0.0001, rel=1e-3)
+
+    result = measure_geometry(tiny)
+    assert result.supported
+    # Real area near Chennai: ~1.2 million m² (UTM, not degrees)
+    assert 1.1e6 < result.area_sq_m < 1.3e6, (
+        f"Expected ~1.2M m², got {result.area_sq_m:.0f}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Zone-boundary polygon: centroid in zone 44, edge in zone 45
+# ---------------------------------------------------------------------------
+
+def test_zone_boundary_polygon_within_tolerance():
+    # Polygon straddles lon=84 (zone 44/45 boundary); centroid is at lon ~84.
+    # Measurement should still agree with Geod within 0.5%.
+    straddling = Polygon([
+        (83.95, 13.0), (84.05, 13.0),
+        (84.05, 13.1), (83.95, 13.1),
+        (83.95, 13.0),
+    ])
+    result = measure_geometry(straddling)
+
+    assert result.supported
+    assert result.area_sq_m is not None
+
+    geod_area, _ = GEOD.geometry_area_perimeter(straddling)
+    assert rel_close(result.area_sq_m, abs(geod_area)), (
+        f"Zone-boundary UTM {result.area_sq_m:.1f} vs Geod {abs(geod_area):.1f}"
+    )

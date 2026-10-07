@@ -1,7 +1,8 @@
 """
 Tests for app/services/crs.py.
 Covers: zone arithmetic, hemisphere selection, clamping, polar rejection,
-and that to_utm returns meter-range coordinates for a known location.
+longitude validation, and that to_utm returns meter-range coordinates for a
+known location.
 """
 import pytest
 from shapely.geometry import Point, Polygon
@@ -48,8 +49,35 @@ def test_polar_south_raises():
 
 
 def test_exactly_84_is_ok():
-    # Boundary: abs(lat)==84 is still valid.
+    # Boundary: lat==84 is still valid (UTM defined up to 84°N).
     assert utm_epsg_for(0, 84) == 32631
+
+
+# ---------------------------------------------------------------------------
+# utm_epsg_for: southern boundary and longitude validation (new)
+# ---------------------------------------------------------------------------
+
+def test_lat_minus_81_raises_polar():
+    # lat=-81 is below -80, so UTM is undefined -> ValueError with "polar".
+    with pytest.raises(ValueError, match="polar"):
+        utm_epsg_for(0, -81)
+
+
+def test_lat_minus_80_is_accepted():
+    # lat=-80 is the exact southern boundary; should not raise.
+    result = utm_epsg_for(0, -80)
+    assert result == 32731  # zone 31 southern hemisphere
+
+
+def test_lon_190_raises_longitude_error():
+    # lon=190 is outside -180..180; previously silently clamped to zone 60.
+    with pytest.raises(ValueError, match="longitude"):
+        utm_epsg_for(190, 0)
+
+
+def test_lon_minus_181_raises_longitude_error():
+    with pytest.raises(ValueError, match="longitude"):
+        utm_epsg_for(-181, 0)
 
 
 # ---------------------------------------------------------------------------
@@ -86,8 +114,8 @@ def test_to_wgs84_passthrough():
 
 def test_to_wgs84_from_utm():
     # Project a point to UTM 44N then back; should land very close to origin.
-    from pyproj import Transformer
     import shapely.ops
+    from pyproj import Transformer
 
     src = Transformer.from_crs(4326, 32644, always_xy=True)
     pt_utm = shapely.ops.transform(src.transform, Point(80.27, 13.08))
