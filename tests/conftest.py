@@ -8,6 +8,56 @@ import zipfile
 import geopandas as gpd
 import pytest
 from shapely.geometry import LineString, Point, Polygon
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.pool import StaticPool
+from fastapi.testclient import TestClient
+
+import app.config as config
+from app.db import Base, get_db
+from app.main import app
+
+
+@pytest.fixture
+def test_db():
+    """In-memory SQLite database isolated per test."""
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(bind=engine)
+    TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+    session = TestingSessionLocal()
+    try:
+        yield session
+    finally:
+        session.close()
+        Base.metadata.drop_all(bind=engine)
+
+
+@pytest.fixture
+def client(test_db: Session, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """
+    FastAPI TestClient initialized without a context manager to bypass the lifespan hook.
+    Overrides get_db with in-memory SQLite and redirects UPLOAD_DIR to tmp_path.
+    """
+    upload_dir = tmp_path / "test_uploads"
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(config, "UPLOAD_DIR", str(upload_dir))
+
+    def _override_get_db():
+        try:
+            yield test_db
+        finally:
+            pass
+
+    app.dependency_overrides[get_db] = _override_get_db
+    test_client = TestClient(app)
+    try:
+        yield test_client
+    finally:
+        app.dependency_overrides.clear()
 
 
 @pytest.fixture

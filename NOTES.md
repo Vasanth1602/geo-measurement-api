@@ -171,6 +171,34 @@ confirms the documented distortion stays inside tolerance.
   - Returns HTTP 404 if not found.
 - FastAPI lifespan automatically creates database tables upon startup (`Base.metadata.create_all`).
 
+## Step 6 — End-to-End API Integration Testing (`tests/test_api.py`)
+
+### Test Harness Isolation (`tests/conftest.py`)
+- **In-Memory SQLite Database:** Using `create_engine("sqlite://", poolclass=StaticPool, connect_args={"check_same_thread": False})` creates an ephemeral in-memory database shared across threads during each test. Overriding `get_db` ensures test requests never read or write to `app.db`.
+- **Lifespan Bypass:** Initializing `TestClient(app)` without a `with` context manager bypasses FastAPI's lifespan event, preventing automatic table creation on the default `app.db` and keeping the disk clean.
+- **Upload Directory Sandboxing:** Monkeypatching `config.UPLOAD_DIR` to `tmp_path / "test_uploads"` redirects all upload file streaming and zip extraction to temporary folders that are automatically cleaned up after test runs.
+
+### Test Scenarios Covered
+1. **Successful Ingestion & Agreement:**
+   - Uploading valid KML files returns HTTP 201 with `feature_count: 3`, `crs: "EPSG:4326"`, and `status: "COMPLETED"`.
+   - Uploading shapefile zips returns HTTP 201; subsequent `GET /api/files/{id}/` and `GET /api/files/{id}/measurements/` agree on feature counts and metadata.
+2. **Measurement Verification & Geodesic Accuracy:**
+   - Polygons output positive `area_sq_m`, auto-derived `area_hectares` (`area_sq_m / 10000`), null length metrics, and a UTM CRS (e.g. `EPSG:32644`).
+   - LineStrings output positive `length_m`, auto-derived `length_km` (`length_m / 1000`), null area metrics, and a UTM CRS.
+   - Points output `supported: true` with null area/length and note `"no measurement for points"`.
+   - Measured areas and lengths cross-checked against `pyproj.Geod(ellps="WGS84")` match within a strict 0.5% relative tolerance.
+3. **Payload Flexibility:**
+   - Every feature returns the file's CRS.
+   - Geometry GeoJSON dicts are included by default and omitted when `?include_geometry=false` is requested.
+4. **Error Handling & No-Leftover Guarantees:**
+   - Unsupported extensions (`.txt`) $\to$ HTTP 415.
+   - Corrupt zip archives, text files named `.kml`, shapefiles missing `.prj`, zip-slip attacks, and empty KML files $\to$ HTTP 422.
+   - Uploads exceeding `MAX_UPLOAD_MB` $\to$ HTTP 413.
+   - Unknown file IDs on both GET routes $\to$ HTTP 404.
+   - Verified that after 422 or 413 errors, no database rows exist and no leftover directories remain on disk.
+5. **Partial Failure Resilience:**
+   - A KML containing mixed valid features, a `GeometryCollection` (`<MultiGeometry>` with Point and Line), and an invalid self-intersecting bow-tie polygon returns HTTP 201: valid features are measured, while invalid geometries are marked `supported=False` with descriptive notes (`explain_validity`).
+
 ---
 
-<!-- Steps 6–7 notes will be added here as they are completed. -->
+<!-- Step 7 notes will be added here as it is completed. -->
